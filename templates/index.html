@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <title>PDF Stamp → Highlight</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* DESIGN SYSTEM V4: "Smart Sync" */
+    :root {
+      --g-blue: #1A73E8;
+      --g-green: #1E8E3E;
+      --g-yellow: #F9AB00;
+      --g-red: #D93025;
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* Apple-like bounce */
+      --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    :root[data-theme="dark"] {
+      --bg-app: #1C1C1E;
+      --bg-panel: rgba(44, 44, 46, 0.75);
+      --border-panel: rgba(255, 255, 255, 0.12);
+      --text-primary: #FFFFFF;
+      --text-secondary: #AEAEB2;
+      --thumb-bg: rgba(255, 255, 255, 0.05);
+      --thumb-hover: rgba(255, 255, 255, 0.1);
+      --accent-color: var(--g-blue);
+      --accent-glow: rgba(26, 115, 232, 0.4);
+      --shadow-panel: 0 24px 60px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    :root[data-theme="light"] {
+      --bg-app: #F2F2F7;
+      --bg-panel: rgba(255, 255, 255, 0.85);
+      --border-panel: rgba(0, 0, 0, 0.08);
+      --text-primary: #1D1D1F;
+      --text-secondary: #6E6E73;
+      --thumb-bg: #FFFFFF;
+      --thumb-hover: #F5F5F7;
+      --accent-color: var(--g-blue);
+      --accent-glow: rgba(26, 115, 232, 0.25);
+      --shadow-panel: 0 16px 40px -16px rgba(0, 0, 0, 0.12);
+    }
+
+    * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      margin: 0; padding: 40px 20px;
+      background-color: var(--bg-app);
+      color: var(--text-primary);
+      min-height: 100vh;
+      transition: background 0.4s var(--ease-smooth);
+    }
+
+    .layout { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+    /* Glass Panel */
+    .panel {
+      background: var(--bg-panel);
+      backdrop-filter: blur(30px) saturate(120%);
+      -webkit-backdrop-filter: blur(30px) saturate(120%);
+      border: 1px solid var(--border-panel);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: var(--shadow-panel);
+      position: relative;
+    }
+
+    h1 {
+      margin: 0 0 10px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+    }
+
+    /* Hints */
+    .hints-grid {
+      display: flex; gap: 24px; flex-wrap: wrap; margin: 24px 0;
+      padding-bottom: 24px; border-bottom: 1px solid var(--border-panel);
+    }
+    .hint-item { flex: 1; min-width: 200px; display: flex; gap: 12px; }
+    .hint-num {
+      width: 24px; height: 24px; border-radius: 50%; 
+      background: var(--text-secondary); color: var(--bg-app);
+      font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    /* Google Colors for steps */
+    .hint-item:nth-child(1) .hint-num { background: var(--g-blue); color: white; }
+    .hint-item:nth-child(2) .hint-num { background: var(--g-yellow); color: #222; }
+    .hint-item:nth-child(3) .hint-num { background: var(--g-green); color: white; }
+    
+    .hint-text h4 { margin: 0 0 4px 0; font-size: 14px; font-weight: 600; }
+    .hint-text p { margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
+
+    /* Controls */
+    .controls-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
+    
+    .btn {
+      border: none; outline: none; cursor: pointer;
+      padding: 12px 20px; border-radius: 12px;
+      font-size: 14px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: all 0.2s var(--ease-smooth);
+    }
+    .btn-primary {
+      background: var(--accent-color); color: white;
+      box-shadow: 0 4px 14px -4px var(--accent-glow);
+    }
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px -6px var(--accent-glow);
+    }
+    .btn-secondary {
+      background: rgba(125,125,125, 0.1); color: var(--text-primary);
+    }
+    .btn-secondary:hover:not(:disabled) { background: rgba(125,125,125, 0.18); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    input[type="file"] { display: none; }
+
+    /* File Info */
+    .file-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border-radius: 8px;
+      background: var(--thumb-bg); border: 1px solid var(--border-panel);
+      font-size: 13px; color: var(--text-secondary);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .file-tag.visible { opacity: 1; }
+
+    /* Text Input */
+    .input-wrapper { flex: 1; max-width: 300px; position: relative; }
+    .text-input {
+      width: 100%; background: var(--thumb-bg);
+      border: 1px solid var(--border-panel);
+      border-radius: 10px; padding: 11px 14px;
+      color: var(--text-primary); font-family: inherit; font-size: 14px;
+      transition: 0.2s;
+    }
+    .text-input:focus {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      outline: none;
+    }
+
+    /* PREVIEW GRID */
+    #preview {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px;
+      margin-top: 10px;
+    }
+
+    /* Thumbnail Card - Default (Unselected) State */
+    .thumb-card {
+      background: var(--thumb-bg);
+      border-radius: 16px;
+      padding: 10px;
+      cursor: pointer;
+      position: relative;
+      /* Default Border is Transparent */
+      border: 2px solid transparent; 
+      transition: all 0.25s var(--ease-smooth);
+    }
+    .thumb-card canvas {
+      width: 100%; border-radius: 10px; display: block;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      transition: opacity 0.2s;
+    }
+    .thumb-card:hover {
+      background: var(--thumb-hover);
+      transform: translateY(-2px);
+    }
+
+    /* SELECTED STATE - Explicitly defined */
+    .thumb-card.selected {
+      border-color: var(--accent-color); /* Visible Border only when selected */
+      background: rgba(26, 115, 232, 0.08); /* Tiny tint */
+      box-shadow: 0 8px 24px -6px var(--accent-glow);
+      transform: translateY(-4px);
+    }
+
+    /* Checkmark Badge */
+    .check-badge {
+      position: absolute; top: -8px; right: -8px;
+      width: 26px; height: 26px;
+      background: var(--accent-color); color: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 2;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      
+      /* Hidden by default with transform */
+      opacity: 0; 
+      transform: scale(0.5);
+      transition: all 0.3s var(--ease-spring);
+      pointer-events: none; /* Let clicks pass through */
+    }
+
+    /* Only show badge when parent is .selected */
+    .thumb-card.selected .check-badge {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .page-label {
+      text-align: center; margin-top: 8px; font-size: 12px; 
+      color: var(--text-secondary); font-weight: 500;
+    }
+    .thumb-card.selected .page-label { color: var(--accent-color); font-weight: 700; }
+
+    /* Header Icons */
+    .header-right { position: absolute; top: 32px; right: 32px; }
+    .icon-btn {
+      background: transparent; border: 1px solid var(--border-panel);
+      color: var(--text-secondary); width: 32px; height: 32px;
+      border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .icon-btn:hover { color: var(--text-primary); background: var(--thumb-hover); }
+
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
+</head>
+<body>
+
+  <div class="layout">
+    <div class="panel">
+      <div class="header-right">
+        <button id="toggle-theme" class="icon-btn" title="切换主题">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+
+      <h1>PDF Stamp → Highlight</h1>
+      
+      <div class="hints-grid">
+        <div class="hint-item">
+          <div class="hint-num">1</div>
+          <div class="hint-text"><h4>导入</h4><p>选择 PDF 文件</p></div>
+        </div>
+        <div class="hint-item">
+          <div class="hint-num">2</div>
+          <div class="hint-text"><h4>选择</h4><p>点击页面或输入页码范围 (如 1-5)</p></div>
+        </div>
+        <div class="hint-item">
+          <div class="hint-num">3</div>
+          <div class="hint-text"><h4>转换</h4><p>自动生成 _convert 版本</p></div>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <label class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          选择 PDF
+          <input id="file-input" type="file" accept="application/pdf">
+        </label>
+        
+        <div class="input-wrapper">
+          <input id="custom-pages" class="text-input" type="text" placeholder="批量选择 (例如: 1, 3-5, 8)">
+        </div>
+
+        <button id="process-selected" class="btn btn-secondary" disabled>处理选中页</button>
+        <button id="process-all" class="btn btn-secondary" disabled>处理全部</button>
+      </div>
+
+      <div style="margin-top: 16px; display: flex; align-items: center; justify-content: space-between;">
+        <div id="file-info" class="file-tag">
+          <span style="font-weight: 600" id="file-name">filename.pdf</span>
+          <span style="opacity: 0.7; border-left: 1px solid var(--text-secondary); padding-left: 6px; margin-left: 2px;" id="page-count">0 页</span>
+        </div>
+        <div id="status" style="font-size: 13px; color: var(--text-secondary);">等待文件...</div>
+      </div>
+    </div>
+
+    <div class="panel" id="preview-panel" style="display:none">
+      <div id="preview"></div>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const preview = document.getElementById('preview');
+    const previewPanel = document.getElementById('preview-panel');
+    const statusEl = document.getElementById('status');
+    const fileInfo = document.getElementById('file-info');
+    const fileNameEl = document.getElementById('file-name');
+    const pageCountEl = document.getElementById('page-count');
+    const btnSelected = document.getElementById('process-selected');
+    const btnAll = document.getElementById('process-all');
+    const customPagesInput = document.getElementById('custom-pages');
+    const toggleThemeBtn = document.getElementById('toggle-theme');
+
+    let currentFile = null;
+    let pdfDoc = null;
+    let selectedPages = new Set(); // Stores integers
+
+    // --- Event Listeners ---
+    fileInput.addEventListener('change', handleFile);
+    btnSelected.addEventListener('click', () => processFile(true));
+    btnAll.addEventListener('click', () => processFile(false));
+    toggleThemeBtn.addEventListener('click', toggleTheme);
+    
+    // 关键：监听输入框，实现批量输入 -> 视觉同步
+    customPagesInput.addEventListener('input', (e) => {
+      const val = e.target.value;
+      syncSelectionFromInput(val);
+    });
+
+    // Theme Init
+    (function initTheme() {
+      const saved = localStorage.getItem('theme');
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      document.documentElement.setAttribute('data-theme', saved || (prefersLight ? 'light' : 'dark'));
+    })();
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    }
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+    function setButtonsEnabled(enabled) {
+      btnSelected.disabled = !enabled;
+      btnAll.disabled = !enabled;
+      customPagesInput.disabled = !enabled;
+    }
+
+    // --- File Handling ---
+    async function handleFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      currentFile = file;
+      
+      fileNameEl.textContent = file.name;
+      fileInfo.classList.add('visible');
+      previewPanel.style.display = 'block';
+      
+      setStatus("解析文档中...");
+      setButtonsEnabled(false);
+      preview.innerHTML = '';
+      selectedPages.clear();
+      customPagesInput.value = '';
+      
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        pageCountEl.textContent = `${pdfDoc.numPages} 页`;
+        
+        setStatus('生成缩略图...');
+        await renderThumbnails(pdfDoc);
+        
+        setStatus('就绪');
+        setButtonsEnabled(true);
+      } catch (err) {
+        console.error(err);
+        setStatus('错误: ' + err.message);
+      }
+    }
+
+    async function renderThumbnails(doc) {
+      preview.innerHTML = '';
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        // 适当减小缩略图尺寸以提高性能
+        const viewport = page.getViewport({ scale: 0.2 });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        // 渲染页面
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const card = document.createElement('div');
+        card.className = 'thumb-card';
+        card.dataset.pageNum = i; // Store page num in DOM for easy access
+
+        // Badge Icon (Hidden by default via CSS)
+        const badge = document.createElement('div');
+        badge.className = 'check-badge';
+        badge.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        
+        const label = document.createElement('div');
+        label.className = 'page-label';
+        label.textContent = i;
+
+        card.appendChild(badge);
+        card.appendChild(canvas);
+        card.appendChild(label);
+
+        // Click Event
+        card.addEventListener('click', () => togglePageSelection(i, card));
+        preview.appendChild(card);
+      }
+    }
+
+    // --- Core Selection Logic ---
+
+    // 1. Toggle Selection via Click
+    function togglePageSelection(pageNum, cardEl) {
+      if (selectedPages.has(pageNum)) {
+        selectedPages.delete(pageNum);
+        cardEl.classList.remove('selected');
+      } else {
+        selectedPages.add(pageNum);
+        cardEl.classList.add('selected');
+      }
+      // 反向同步：更新输入框文字
+      updateInputFromSelection();
+      updateStatus();
+    }
+
+    // 2. Sync: Input Text -> Visual Grid
+    function syncSelectionFromInput(text) {
+      // Parse text "1, 3-5" into Set [1,3,4,5]
+      const newSet = new Set();
+      const parts = text.split(/[,，\s]+/); // split by comma, space, or Chinese comma
+      
+      parts.forEach(part => {
+        if (!part) return;
+        if (part.includes('-')) {
+          const [start, end] = part.split('-').map(Number);
+          if (!isNaN(start) && !isNaN(end)) {
+            const min = Math.min(start, end);
+            const max = Math.max(start, end);
+            for (let i = min; i <= max; i++) {
+              // Ensure within valid range
+              if (pdfDoc && i >= 1 && i <= pdfDoc.numPages) newSet.add(i);
+            }
+          }
+        } else {
+          const num = Number(part);
+          if (!isNaN(num) && pdfDoc && num >= 1 && num <= pdfDoc.numPages) {
+            newSet.add(num);
+          }
+        }
+      });
+
+      selectedPages = newSet;
+      
+      // Update Visuals for ALL cards
+      const cards = document.querySelectorAll('.thumb-card');
+      cards.forEach(card => {
+        const pNum = parseInt(card.dataset.pageNum);
+        if (selectedPages.has(pNum)) {
+          card.classList.add('selected');
+        } else {
+          card.classList.remove('selected');
+        }
+      });
+      
+      updateStatus();
+    }
+
+    // 3. Sync: Selection Set -> Input Text
+    function updateInputFromSelection() {
+      if (selectedPages.size === 0) {
+        customPagesInput.value = '';
+        return;
+      }
+      
+      // Convert Set to sorted array
+      const sorted = Array.from(selectedPages).sort((a, b) => a - b);
+      
+      // Create ranges (e.g., 1,2,3 -> "1-3")
+      const ranges = [];
+      let start = sorted[0];
+      let prev = sorted[0];
+      
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] === prev + 1) {
+          prev = sorted[i];
+        } else {
+          ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+          start = sorted[i];
+          prev = sorted[i];
+        }
+      }
+      ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+      
+      customPagesInput.value = ranges.join(', ');
+    }
+
+    function updateStatus() {
+      const count = selectedPages.size;
+      if (count > 0) {
+        setStatus(`已选中 ${count} 页`);
+        btnSelected.disabled = false;
+        btnSelected.innerHTML = `处理选中页 (${count})`;
+        btnSelected.classList.remove('btn-secondary');
+        btnSelected.classList.add('btn-primary');
+      } else {
+        setStatus('就绪');
+        btnSelected.disabled = true;
+        btnSelected.textContent = '处理选中页';
+        btnSelected.classList.remove('btn-primary');
+        btnSelected.classList.add('btn-secondary');
+      }
+    }
+
+    // --- Processing ---
+    async function processFile(onlySelected) {
+      if (!currentFile) return;
+      
+      const formData = new FormData();
+      formData.append('file', currentFile);
+      
+      if (onlySelected && selectedPages.size > 0) {
+        // Use the Set as source of truth
+        const pagesStr = Array.from(selectedPages).sort((a,b)=>a-b).join(',');
+        formData.append('pages', pagesStr);
+      }
+
+      setStatus('处理中...');
+      setButtonsEnabled(false);
+      
+      try {
+        // 模拟后端请求 (Replace with actual fetch in production)
+        const resp = await fetch('/process', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error(await resp.text());
+        const blob = await resp.blob();
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Naming: Original + _convert
+        const baseName = currentFile.name.replace(/\.pdf$/i, '');
+        a.download = `${baseName}_convert.pdf`;
+        
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setStatus('下载已开始');
+      } catch (err) {
+        console.error("Fetch failed (expected in pure demo mode without backend):", err);
+        // Fallback demo for UI testing without backend
+        alert("处理请求已发送 (前端演示模式)。\n如需实际功能，请确保后端服务 '/process' 正常运行。");
+        setStatus('演示完成');
+      } finally {
+        setButtonsEnabled(true);
+      }
+    }
+  </script>
+</body>
+</html>
