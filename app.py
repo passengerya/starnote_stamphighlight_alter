@@ -8,7 +8,7 @@ from typing import List, Optional  # 类型提示支持
 from flask import Flask, render_template, request, send_file, jsonify, after_this_request
 
 # 导入自定义PDF处理模块
-from pdf_stamp_to_highlight import parse_page_ranges, process
+from pdf_stamp_to_highlight import overlay_pages, parse_page_ranges, process
 
 # 创建Flask应用实例，指定模板和静态文件目录
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -73,6 +73,105 @@ def process_pdf():
     # 返回处理后的PDF文件供用户下载
     return send_file(
         tmp_out,
+        download_name=download_name,
+        as_attachment=True,
+        mimetype="application/pdf",
+    )
+
+
+# 定义PDF叠加处理路由，只接受POST请求
+@app.route("/process_overlay", methods=["POST"])
+def process_and_overlay():
+    """
+    处理上传的PDF文件，将一个PDF的页面替换到另一个PDF的指定页面上
+    该功能用于将源PDF处理后的页面叠加到目标PDF的指定位置
+    """
+    # 获取上传的源文件、目标文件和页码参数
+    uploaded = request.files.get("file")  # 源PDF文件
+    target_pdf = request.files.get("target_file")  # 目标PDF文件
+    pages_arg = request.form.get("pages")  # 要处理的源PDF页码范围
+    source_pages_arg = request.form.get("source_pages")  # 用于叠加的源PDF页码
+    target_pages_arg = request.form.get("target_pages")  # 要叠加到的目标PDF页码
+
+    # 检查是否上传了源文件和目标文件，如果缺少任一文件则返回错误信息
+    if not uploaded or not target_pdf:
+        return jsonify({"error": "both source and target PDF files are required"}), 400
+
+    # 解析用户指定的页码范围
+    pages: Optional[List[int]] = parse_page_ranges(pages_arg)  # 源PDF要处理的页码
+    source_pages: Optional[List[int]] = parse_page_ranges(source_pages_arg)  # 源PDF用于叠加的页码
+    target_pages: Optional[List[int]] = parse_page_ranges(target_pages_arg)  # 目标PDF被叠加的页码
+
+    # 验证目标页码参数是否提供，这是叠加操作的必要参数
+    if target_pages is None:
+        return jsonify({"error": "target_pages is required for overlay"}), 400
+
+    # 如果未指定源页码，则默认使用目标页码
+    if source_pages is None:
+        source_pages = target_pages
+
+    # 确保源页码和目标页码数量相同，以便一一对应
+    if len(source_pages) != len(target_pages):
+        return jsonify({"error": "source_pages and target_pages must have the same length"}), 400
+
+    # 创建临时目录用于处理PDF文件
+    tmpdir = tempfile.mkdtemp()
+    # 定义各种临时文件路径
+    tmp_in = Path(tmpdir) / "in.pdf"  # 源PDF输入文件
+    tmp_out = Path(tmpdir) / "out.pdf"  # 源PDF处理后输出文件
+    tmp_target = Path(tmpdir) / "target.pdf"  # 目标PDF文件
+    tmp_overlay = Path(tmpdir) / "overlay.pdf"  # 最终叠加结果文件
+
+    # 保存上传的文件到临时路径
+    uploaded.save(str(tmp_in))
+    target_pdf.save(str(tmp_target))
+
+    # 定义临时文件清理函数
+    def _cleanup_temp():
+        """清理所有临时文件和目录"""
+        try:
+            # 依次删除所有临时文件
+            for path in (tmp_overlay, tmp_out, tmp_in, tmp_target):
+                if path.exists():
+                    path.unlink(missing_ok=True)
+            # 删除临时目录
+            Path(tmpdir).rmdir()
+        except Exception:
+            # 忽略清理过程中的异常
+            pass
+
+    # 处理PDF文件，将批注转换为高亮，然后进行页面叠加
+    try:
+        # 第一步：处理源PDF，将批注转换为高亮
+        process(str(tmp_in), str(tmp_out), pages)
+
+        # 第二步：将处理后的源PDF页面叠加到目标PDF的指定页面上
+        overlay_pages(
+            str(tmp_out),  # 处理后的源PDF
+            str(tmp_target),  # 目标PDF
+            str(tmp_overlay),  # 输出文件
+            source_pages,  # 源PDF页码
+            target_pages,  # 目标PDF页码
+        )
+    except Exception as exc:
+        # 如果处理过程中出现异常，清理临时文件并返回错误信息
+        _cleanup_temp()
+        return jsonify({"error": str(exc)}), 400
+
+    # 构建下载文件名，保留目标文件名
+    target_name = Path(target_pdf.filename or "merged.pdf")
+    download_name = target_name.name or "merged.pdf"
+
+    # 定义清理函数，在请求完成后删除临时文件
+    @after_this_request
+    def cleanup(response):
+        """清理叠加处理过程中创建的临时文件"""
+        _cleanup_temp()
+        return response
+
+    # 返回处理后的PDF文件供用户下载
+    return send_file(
+        tmp_overlay,
         download_name=download_name,
         as_attachment=True,
         mimetype="application/pdf",
