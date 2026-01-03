@@ -650,24 +650,23 @@ def overlay_pages(
     if len(source_pages) != len(target_pages):
         raise ValueError("source_pages and target_pages must have the same length")
 
-    # 打开源PDF和目标PDF
-    source_pdf = pikepdf.Pdf.open(source_pdf_path)
-    target_pdf = pikepdf.Pdf.open(target_pdf_path)
+    # 使用上下文管理器确保文件正确关闭
+    with pikepdf.Pdf.open(source_pdf_path) as source_pdf, pikepdf.Pdf.open(
+        target_pdf_path
+    ) as target_pdf:
+        # 遍历源页面和目标页面的对应关系
+        for src_idx, tgt_idx in zip(source_pages, target_pages):
+            # 检查源页面索引是否有效
+            if src_idx < 0 or src_idx >= len(source_pdf.pages):
+                raise IndexError(f"source page {src_idx + 1} out of range")
+            # 检查目标页面索引是否有效
+            if tgt_idx < 0 or tgt_idx >= len(target_pdf.pages):
+                raise IndexError(f"target page {tgt_idx + 1} out of range")
+            # 让pikepdf的pages接口完成跨文档复制（会自动 copy_foreign）
+            target_pdf.pages[tgt_idx] = source_pdf.pages[src_idx]
 
-    # 遍历源页面和目标页面的对应关系
-    for src_idx, tgt_idx in zip(source_pages, target_pages):
-        # 检查源页面索引是否有效
-        if src_idx < 0 or src_idx >= len(source_pdf.pages):
-            raise IndexError(f"source page {src_idx + 1} out of range")
-        # 检查目标页面索引是否有效
-        if tgt_idx < 0 or tgt_idx >= len(target_pdf.pages):
-            raise IndexError(f"target page {tgt_idx + 1} out of range")
-        # 使用copy_foreign方法将源页面克隆到目标PDF上下文中
-        # 这确保了所有资源(如字体、图像等)都被正确复制
-        target_pdf.pages[tgt_idx] = target_pdf.copy_foreign(source_pdf.pages[src_idx])
-
-    # 保存修改后的目标PDF
-    target_pdf.save(output_path)
+        # 保存修改后的目标PDF
+        target_pdf.save(output_path)
 
 
 def process(pdf_path: str, output_path: str, pages: Optional[Sequence[int]] = None) -> None:

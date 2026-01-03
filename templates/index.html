@@ -446,6 +446,12 @@
       updateBtnState();
     });
 
+    els.inputSource.addEventListener('input', (e) => {
+      state.selSource = parseRange(e.target.value, state.sourceDoc?.numPages || 0);
+      syncVisuals(els.gridSource, state.selSource, false);
+      updateBtnState();
+    });
+
     els.inputTarget.addEventListener('input', (e) => {
       state.selTarget = parseRange(e.target.value, state.targetDoc?.numPages || 0);
       syncVisuals(els.gridTarget, state.selTarget, true);
@@ -496,7 +502,12 @@
     function controls(enabled) {
       els.btnAll.disabled = !enabled; els.inputCustom.disabled = !enabled;
       els.inputTarget.disabled = !enabled; els.inputSource.disabled = !enabled;
-      updateBtnState();
+      if (!enabled) {
+        els.btnSelected.disabled = true;
+        els.btnOverlay.disabled = true;
+      } else {
+        updateBtnState();
+      }
     }
 
     function updateBtnState() {
@@ -538,19 +549,102 @@
 
     function setToStr(set) { return Array.from(set).sort((a,b)=>a-b).join(', '); }
 
+    function normalizePagesInput(inputEl, selectedSet) {
+      const typed = inputEl?.value?.trim();
+      if (typed) return typed;
+      if (selectedSet && selectedSet.size) return setToStr(selectedSet);
+      return '';
+    }
+
+    function filenameFromDisposition(res, fallback) {
+      const header = res.headers.get('Content-Disposition') || '';
+      const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+      const plainMatch = header.match(/filename="?([^\";]+)"?/i);
+      const name = utf8Match?.[1] || plainMatch?.[1];
+      return name ? decodeURIComponent(name) : fallback;
+    }
+
+    async function responseToError(res) {
+      try {
+        const data = await res.clone().json();
+        if (data?.error) return data.error;
+      } catch (_) {}
+      try {
+        const text = await res.clone().text();
+        if (text) return text;
+      } catch (_) {}
+      return res.statusText || '请求失败';
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'output.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function derivedConvertName() {
+      const original = state.sourceFile?.name || 'processed.pdf';
+      const base = original.replace(/\.pdf$/i, '') || 'processed';
+      return `${base}_convert.pdf`;
+    }
+
     async function process(selectedOnly) {
       if(!state.sourceFile) return;
       updateStatus('正在处理...', 'loading');
+      controls(false);
       const fd = new FormData();
       fd.append('file', state.sourceFile);
-      if(selectedOnly && state.selSource.size > 0) fd.append('pages', setToStr(state.selSource));
-      setTimeout(() => { alert('前端演示模式：请求已构建。'); updateStatus('处理完成', 'success'); }, 800);
+      const pages = selectedOnly ? normalizePagesInput(els.inputCustom, state.selSource) : '';
+      if (pages) fd.append('pages', pages);
+      try {
+        const res = await fetch('/process', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await responseToError(res));
+        const blob = await res.blob();
+        const name = filenameFromDisposition(res, derivedConvertName());
+        downloadBlob(blob, name);
+        updateStatus('处理完成，已开始下载', 'success');
+      } catch (err) {
+        console.error(err);
+        updateStatus(err?.message || '处理失败', 'error');
+      } finally {
+        controls(true);
+      }
     }
 
     async function processOverlay() {
       if(!state.sourceFile || !state.targetFile) return;
+      const targetPages = normalizePagesInput(els.inputTarget, state.selTarget);
+      if (!targetPages) { updateStatus('请先选择目标页码', 'error'); return; }
+      const sourcePages = normalizePagesInput(els.inputSource, state.selSource);
+      const pagesToProcess = normalizePagesInput(els.inputCustom, state.selSource);
+
       updateStatus('正在合并...', 'loading');
-      setTimeout(() => { alert('前端演示模式：覆盖请求已构建。'); updateStatus('合并完成', 'success'); }, 800);
+      controls(false);
+      const fd = new FormData();
+      fd.append('file', state.sourceFile);
+      fd.append('target_file', state.targetFile);
+      fd.append('target_pages', targetPages);
+      if (sourcePages) fd.append('source_pages', sourcePages);
+      if (pagesToProcess) fd.append('pages', pagesToProcess);
+
+      try {
+        const res = await fetch('/process_overlay', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await responseToError(res));
+        const blob = await res.blob();
+        const name = filenameFromDisposition(res, state.targetFile?.name || 'merged.pdf');
+        downloadBlob(blob, name);
+        updateStatus('合并完成，已开始下载', 'success');
+      } catch (err) {
+        console.error(err);
+        updateStatus(err?.message || '合并失败', 'error');
+      } finally {
+        controls(true);
+      }
     }
   </script>
 </body>
