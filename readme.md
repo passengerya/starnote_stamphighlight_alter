@@ -1,6 +1,6 @@
 # PDF Stamp → Highlight & Overlay 工具
 
-将 StarNote 导出的透明 `/Stamp` 批注转换为圆角 `/Highlight`，并支持把转换结果覆盖到另一份 PDF 指定页。内置 Web UI 便于可视化选页、映射与下载。
+将 StarNote 导出的透明 `/Stamp`  **荧光笔**批注转换为圆角 `/Highlight`，并支持把转换结果覆盖到另一份 PDF 指定页。内置 Web UI 便于可视化选页、映射与下载。
 
 ## 功能
 - 转换：仅处理透明度 < 1 的 `/Stamp` 批注，生成圆角高亮（内置 AP，兼容主流阅读器）。
