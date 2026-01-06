@@ -240,6 +240,40 @@
 
     .hidden { display: none !important; }
     input[type="file"] { display: none; }
+
+    .context-menu {
+      position: fixed; z-index: 3000;
+      background: var(--glass-surface); border: 1px solid var(--glass-border);
+      border-radius: 14px; padding: 6px; box-shadow: 0 20px 40px -18px rgba(0,0,0,0.4);
+      min-width: 160px; backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+    }
+    .context-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 10px; cursor: pointer;
+      color: var(--text-main); font-size: 13px; user-select: none;
+    }
+    .context-item:hover { background: var(--glass-highlight); color: var(--c-blue); }
+
+    .full-preview {
+      position: fixed; z-index: 3200;
+      background: var(--glass-surface); border: 1px solid var(--glass-border);
+      border-radius: 16px; padding: 12px 12px 14px 12px;
+      box-shadow: 0 30px 60px -24px rgba(0,0,0,0.45);
+      backdrop-filter: blur(22px) saturate(150%);
+      -webkit-backdrop-filter: blur(22px) saturate(150%);
+      max-width: 70vw; max-height: 85vh; overflow: hidden;
+      transition: opacity 0.15s var(--ease-smooth);
+    }
+    .full-preview.hidden { opacity: 0; pointer-events: none; }
+    .full-preview-header {
+      font-size: 12px; color: var(--text-sub); margin: 0 0 8px 2px; letter-spacing: 0.02em;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .full-preview canvas {
+      display: block; width: 100%; height: auto;
+      max-height: calc(85vh - 34px); border-radius: 10px; background: var(--bg-deep);
+    }
     
     /* 移动端适配调整 */
     @media (max-width: 768px) {
@@ -348,6 +382,21 @@
 
   </div>
 
+  <div id="context-menu" class="context-menu hidden">
+    <div class="context-item" data-action="view-original">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>查看原图</span>
+    </div>
+  </div>
+
+  <div id="full-preview" class="full-preview hidden">
+    <div class="full-preview-header">
+      <span id="full-preview-title">原图</span>
+      <span style="opacity:0.6">右键或按 Esc 关闭</span>
+    </div>
+    <canvas id="full-preview-canvas"></canvas>
+  </div>
+
   <script>
     /* 逻辑保持不变 */
     const els = {
@@ -373,13 +422,19 @@
       tagNameTarget: document.getElementById('label-target-name'),
       hintSource: document.getElementById('hint-source'),
       hintTarget: document.getElementById('hint-target'),
-      themeToggle: document.getElementById('toggle-theme')
+      themeToggle: document.getElementById('toggle-theme'),
+      contextMenu: document.getElementById('context-menu'),
+      contextView: document.querySelector('#context-menu [data-action=\"view-original\"]'),
+      fullPreview: document.getElementById('full-preview'),
+      fullPreviewCanvas: document.getElementById('full-preview-canvas'),
+      fullPreviewTitle: document.getElementById('full-preview-title')
     };
 
     let state = {
       sourceFile: null, targetFile: null, sourceDoc: null, targetDoc: null,
       selSource: new Set(), selTarget: new Set()
     };
+    let contextState = null;
 
     (function initTheme() {
       const saved = localStorage.getItem('theme');
@@ -486,6 +541,11 @@
           if (isTarget) { els.inputTarget.value = setToStr(set); syncVisuals(container, set, true); }
           else { els.inputCustom.value = setToStr(set); syncVisuals(container, set, false); }
           updateBtnState();
+        });
+        card.addEventListener('contextmenu', (evt) => {
+          evt.preventDefault();
+          const rect = card.getBoundingClientRect();
+          showContextMenu(evt, { doc, page: i, label: isTarget ? 'target' : 'source', rect });
         });
         container.appendChild(card);
       }
@@ -646,6 +706,83 @@
         controls(true);
       }
     }
+
+    function showContextMenu(evt, info) {
+      contextState = info;
+      els.contextMenu.classList.remove('hidden');
+      const rect = els.contextMenu.getBoundingClientRect();
+      const left = Math.min(evt.clientX, window.innerWidth - rect.width - 8);
+      const top = Math.min(evt.clientY, window.innerHeight - rect.height - 8);
+      els.contextMenu.style.left = `${left}px`;
+      els.contextMenu.style.top = `${top}px`;
+    }
+
+    function hideContextMenu() {
+      els.contextMenu.classList.add('hidden');
+      contextState = null;
+    }
+
+    async function viewOriginalPage() {
+      if (!contextState?.doc || !contextState?.page) return;
+      const rect = contextState.rect;
+      try {
+        const pdfPage = await contextState.doc.getPage(contextState.page);
+        const maxW = Math.min(window.innerWidth * 0.7, 960);
+        const maxH = Math.min(window.innerHeight * 0.85, 1100);
+        const baseViewport = pdfPage.getViewport({ scale: 1 });
+        const scale = Math.max(1.2, Math.min(maxW / baseViewport.width, maxH / baseViewport.height));
+        const viewport = pdfPage.getViewport({ scale });
+
+        const canvas = els.fullPreviewCanvas;
+        const ctx = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+
+        els.fullPreviewTitle.textContent = `${contextState.label || 'page'} ${contextState.page}`;
+        positionFullPreview(rect, canvas.width, canvas.height);
+        els.fullPreview.classList.remove('hidden');
+      } catch (err) {
+        console.error(err);
+      }
+      hideContextMenu();
+    }
+
+    function positionFullPreview(targetRect, previewW, previewH) {
+      const pad = 14;
+      const headerH = 30;
+      const panelW = Math.min(previewW + pad * 2, window.innerWidth * 0.7);
+      const panelH = Math.min(previewH + pad * 2 + headerH, window.innerHeight * 0.85);
+
+      let left = targetRect ? targetRect.left - pad : (window.innerWidth - panelW) / 2;
+      let top = targetRect ? targetRect.top - pad : (window.innerHeight - panelH) / 2;
+
+      left = Math.max(12, Math.min(left, window.innerWidth - panelW - 12));
+      top = Math.max(12, Math.min(top, window.innerHeight - panelH - 12));
+
+      els.fullPreview.style.left = `${left}px`;
+      els.fullPreview.style.top = `${top}px`;
+      els.fullPreview.style.width = `${panelW}px`;
+    }
+
+    function hideFullPreview() {
+      els.fullPreview.classList.add('hidden');
+    }
+
+    els.contextView.addEventListener('click', viewOriginalPage);
+    document.addEventListener('click', (evt) => {
+      if (!evt.target.closest('#context-menu')) hideContextMenu();
+      if (!evt.target.closest('#full-preview')) hideFullPreview();
+    });
+    els.fullPreview.addEventListener('contextmenu', (evt) => {
+      evt.preventDefault();
+      hideFullPreview();
+      hideContextMenu();
+    });
+    document.addEventListener('contextmenu', (evt) => { if (!evt.target.closest('.card')) hideContextMenu(); });
+    window.addEventListener('resize', () => { hideContextMenu(); hideFullPreview(); });
+    window.addEventListener('scroll', hideFullPreview, { passive: true });
+    document.addEventListener('keydown', (evt) => { if (evt.key === 'Escape') { hideContextMenu(); hideFullPreview(); } });
   </script>
 </body>
 </html>
