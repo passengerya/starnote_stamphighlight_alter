@@ -1,14 +1,25 @@
-# 导入必要的库
-import os  # 用于操作系统相关功能，如环境变量
-import tempfile  # 用于创建临时文件和目录
-from pathlib import Path  # 提供面向对象的路径操作
-from typing import List, Optional  # 类型提示支持
+# Flask 入口：提供批注转换、页面叠加与矩形注释转移的 HTTP 接口
+import os  # 用于操作系统相关功能，如获取环境变量中的端口号
+import tempfile  # 用于创建临时文件和目录，处理上传的PDF文件
+from pathlib import Path  # 提供面向对象的路径操作，更安全地处理文件路径
+from typing import List, Optional  # 类型提示支持，提高代码可读性和IDE支持
 
 # 导入Flask框架相关组件
 from flask import Flask, render_template, request, send_file, jsonify, after_this_request
+# Flask: Web应用框架
+# render_template: 渲染HTML模板
+# request: 处理HTTP请求数据
+# send_file: 发送文件给客户端
+# jsonify: 将Python对象转换为JSON响应
+# after_this_request: 在请求完成后执行清理操作
 
 # 导入自定义PDF处理模块
-from pdf_stamp_to_highlight import overlay_pages, parse_page_ranges, process
+from pdf_stamp_to_highlight import (
+    overlay_pages,  # 将一个PDF的页面叠加到另一个PDF的指定页面上
+    parse_page_ranges,  # 解析页码范围字符串，如"1,3-5"
+    process,  # 处理PDF文件，将半透明印章注释转换为高亮注释
+    transfer_square_annotations,  # 将源PDF中的矩形框注释复制到目标PDF
+)
 
 # 创建Flask应用实例，指定模板和静态文件目录
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -17,24 +28,56 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # 定义根路由，返回主页模板
 @app.route("/")
 def index():
-    """渲染并返回主页HTML模板"""
+    """
+    渲染并返回主页HTML模板
+    
+    路由: /
+    方法: GET
+    功能: 显示PDF印章转高亮的主页面
+    返回: 渲染后的index.html模板
+    """
     return render_template("index.html")
+
+
+@app.route("/transfer")
+def transfer_page():
+    """
+    矩形注释转移子页面
+    
+    路由: /transfer
+    方法: GET
+    功能: 显示矩形注释转移的页面
+    返回: 渲染后的transfer.html模板
+    """
+    return render_template("transfer.html")
 
 
 # 定义PDF处理路由，只接受POST请求
 @app.route("/process", methods=["POST"])
 def process_pdf():
-    """处理上传的PDF文件，将PDF中的批注转换为高亮"""
+    """
+    处理上传的PDF文件，将PDF中的批注转换为高亮
+    
+    路由: /process
+    方法: POST
+    参数:
+        - file: 上传的PDF文件 (multipart/form-data)
+        - pages: 可选，指定处理的页码范围，格式如"1,3-5"
+    
+    返回:
+        - 成功: 处理后的PDF文件，以附件形式下载
+        - 失败: JSON格式的错误信息和HTTP状态码
+    """
     # 获取上传的文件和页码参数
-    uploaded = request.files.get("file")
-    pages_arg = request.form.get("pages")
+    uploaded = request.files.get("file")  # 获取上传的PDF文件
+    pages_arg = request.form.get("pages")  # 获取用户指定的页码范围
 
     # 检查是否上传了文件，如果没有则返回错误信息
     if not uploaded:
-        return jsonify({"error": "no file uploaded"}), 400
+        return jsonify({"error": "no file uploaded"}), 400  # 返回400错误和错误信息
 
     # 解析用户指定的页码范围
-    pages: Optional[List[int]] = parse_page_ranges(pages_arg)
+    pages: Optional[List[int]] = parse_page_ranges(pages_arg)  # 将字符串转换为页码列表
 
     # 创建临时目录用于处理PDF文件
     tmpdir = tempfile.mkdtemp()
@@ -84,22 +127,22 @@ def process_pdf():
 def process_and_overlay():
     """
     处理上传的PDF文件，将一个PDF的页面替换到另一个PDF的指定页面上
-    该功能用于将源PDF处理后的页面叠加到目标PDF的指定位置
+    该功能用于将需转换 PDF 处理后的页面叠加到目标PDF的指定位置
     """
-    # 获取上传的源文件、目标文件和页码参数
-    uploaded = request.files.get("file")  # 源PDF文件
+    # 获取上传的需转换 PDF 文件、目标文件和页码参数
+    uploaded = request.files.get("file")  # 需转换 PDF 文件
     target_pdf = request.files.get("target_file")  # 目标PDF文件
-    pages_arg = request.form.get("pages")  # 要处理的源PDF页码范围
-    source_pages_arg = request.form.get("source_pages")  # 用于叠加的源PDF页码
+    pages_arg = request.form.get("pages")  # 要处理的需转换 PDF 页码范围
+    source_pages_arg = request.form.get("source_pages")  # 用于叠加的需转换 PDF 页码
     target_pages_arg = request.form.get("target_pages")  # 要叠加到的目标PDF页码
 
-    # 检查是否上传了源文件和目标文件，如果缺少任一文件则返回错误信息
+    # 检查是否上传了需转换 PDF 文件和目标文件，如果缺少任一文件则返回错误信息
     if not uploaded or not target_pdf:
         return jsonify({"error": "both source and target PDF files are required"}), 400
 
     # 解析用户指定的页码范围
-    pages: Optional[List[int]] = parse_page_ranges(pages_arg)  # 源PDF要处理的页码
-    source_pages: Optional[List[int]] = parse_page_ranges(source_pages_arg)  # 源PDF用于叠加的页码
+    pages: Optional[List[int]] = parse_page_ranges(pages_arg)  # 需转换 PDF 要处理的页码
+    source_pages: Optional[List[int]] = parse_page_ranges(source_pages_arg)  # 需转换 PDF 用于叠加的页码
     target_pages: Optional[List[int]] = parse_page_ranges(target_pages_arg)  # 目标PDF被叠加的页码
 
     # 验证目标页码参数是否提供，这是叠加操作的必要参数
@@ -149,9 +192,10 @@ def process_and_overlay():
         overlay_pages(
             str(tmp_out),  # 处理后的源PDF
             str(tmp_target),  # 目标PDF
-            str(tmp_overlay),  # 输出文件
             source_pages,  # 源PDF页码
             target_pages,  # 目标PDF页码
+            output_path=str(tmp_target),  # 原地更新以保留ID
+            preserve_id=True,
         )
     except Exception as exc:
         # 如果处理过程中出现异常，清理临时文件并返回错误信息
@@ -171,7 +215,70 @@ def process_and_overlay():
 
     # 返回处理后的PDF文件供用户下载
     return send_file(
-        tmp_overlay,
+        tmp_target,
+        download_name=download_name,
+        as_attachment=True,
+        mimetype="application/pdf",
+    )
+
+
+@app.route("/transfer_rects", methods=["POST"])
+def transfer_rect_annotations():
+    """
+    将需转移注释 PDF 中的矩形框注释复制到目标 PDF 的指定页面
+    """
+    source_file = request.files.get("source_file")
+    target_file = request.files.get("target_file")
+    source_pages_arg = request.form.get("source_pages")
+    target_pages_arg = request.form.get("target_pages")
+
+    if not source_file or not target_file:
+        return (
+            jsonify({"error": "source_file and target_file are required"}),
+            400,
+        )
+
+    source_pages = parse_page_ranges(source_pages_arg)
+    target_pages = parse_page_ranges(target_pages_arg)
+
+    tmpdir = tempfile.mkdtemp()
+    tmp_source = Path(tmpdir) / "source.pdf"
+    tmp_target = Path(tmpdir) / "target.pdf"
+
+    source_file.save(str(tmp_source))
+    target_file.save(str(tmp_target))
+
+    def _cleanup():
+        try:
+            for p in (tmp_source, tmp_target):
+                if p.exists():
+                    p.unlink(missing_ok=True)
+            Path(tmpdir).rmdir()
+        except Exception:
+            pass
+
+    try:
+        transfer_square_annotations(
+            str(tmp_source),
+            str(tmp_target),
+            output_path=str(tmp_target),  # 原地更新目标文件以保持指纹
+            source_pages=source_pages,
+            target_pages=target_pages,
+        )
+    except Exception as exc:
+        _cleanup()
+        return jsonify({"error": str(exc)}), 400
+
+    target_name = Path(target_file.filename or "rect-transfer.pdf")
+    download_name = target_name.name or "rect-transfer.pdf"
+
+    @after_this_request
+    def cleanup(response):
+        _cleanup()
+        return response
+
+    return send_file(
+        tmp_target,
         download_name=download_name,
         as_attachment=True,
         mimetype="application/pdf",

@@ -621,13 +621,14 @@ def _parse_pages_filter(pages: Optional[Sequence[int]]) -> Optional[set[int]]:
 def overlay_pages(
     source_pdf_path: str,
     target_pdf_path: str,
-    output_path: str,
     source_pages: Sequence[int],
     target_pages: Sequence[int],
+    output_path: Optional[str] = None,
+    preserve_id: bool = False,
 ) -> None:
     """
     用源PDF中的页面替换目标PDF中的页面，并保存到输出路径
-    
+
     该函数接收两个PDF文件路径和两组页码，将源PDF中指定的页面替换到目标PDF
     中对应的位置，然后保存结果到输出路径。这对于合并不同PDF文档的部分内容
     非常有用。
@@ -638,10 +639,14 @@ def overlay_pages(
     参数:
         source_pdf_path: 源PDF文件路径
         target_pdf_path: 目标PDF文件路径
-        output_path: 输出PDF文件路径
         source_pages: 源PDF中的页码列表(0-based)
         target_pages: 目标PDF中的页码列表(0-based)
-        
+        output_path: 输出PDF文件路径，默认为 target_pdf_path
+        preserve_id: 是否保留目标PDF的文档ID
+        incremental: 是否增量保存，None 时在原地保存时默认 True
+        source_pages: 源PDF中的页码列表(0-based)
+        target_pages: 目标PDF中的页码列表(0-based)
+
     异常:
         ValueError: 当源页面列表和目标页面列表长度不同时
         IndexError: 当页码超出PDF页面范围时
@@ -650,10 +655,15 @@ def overlay_pages(
     if len(source_pages) != len(target_pages):
         raise ValueError("source_pages and target_pages must have the same length")
 
+    dest_path = output_path or target_pdf_path
+    # 当输出与目标路径一致时允许覆盖输入文件，以便原位保存
+    allow_overwrite = dest_path == target_pdf_path
+
     # 使用上下文管理器确保文件正确关闭
     with pikepdf.Pdf.open(source_pdf_path) as source_pdf, pikepdf.Pdf.open(
-        target_pdf_path
+        target_pdf_path, allow_overwriting_input=allow_overwrite
     ) as target_pdf:
+        original_ids = target_pdf.trailer.get(Name.ID) if preserve_id else None
         # 遍历源页面和目标页面的对应关系
         for src_idx, tgt_idx in zip(source_pages, target_pages):
             # 检查源页面索引是否有效
@@ -665,8 +675,96 @@ def overlay_pages(
             # 让pikepdf的pages接口完成跨文档复制（会自动 copy_foreign）
             target_pdf.pages[tgt_idx] = source_pdf.pages[src_idx]
 
+        if original_ids is not None:
+            target_pdf.trailer[Name.ID] = original_ids
+
         # 保存修改后的目标PDF
-        target_pdf.save(output_path)
+        target_pdf.save(
+            dest_path,
+            static_id=preserve_id,
+        )
+
+
+def transfer_square_annotations(
+    source_pdf_path: str,
+    target_pdf_path: str,
+    output_path: Optional[str] = None,
+    source_pages: Optional[Sequence[int]] = None,
+    target_pages: Optional[Sequence[int]] = None,
+) -> None:
+    """
+    将源PDF中的矩形框注释(/Square)复制到目标PDF指定页面并保存
+
+    参数:
+        source_pdf_path: 含有矩形框注释的PDF路径
+        target_pdf_path: 目标PDF路径
+        output_path: 输出PDF路径，若为None则在目标路径原地保存
+        source_pages: 需转移的源页(0-based)，默认为与目标页一致或按页数最小值匹配
+        target_pages: 目标页(0-based)，默认为与源页一致或按页数最小值匹配
+
+    异常:
+        ValueError: 页码列表长度不一致时抛出
+        IndexError: 页码超出范围时抛出
+    """
+    dest_path = output_path or target_pdf_path
+    # 与 overlay 相同：若写回同一路径需允许覆盖输入
+    allow_overwrite = dest_path == target_pdf_path
+
+    with pikepdf.Pdf.open(source_pdf_path) as source_pdf, pikepdf.Pdf.open(
+        target_pdf_path, allow_overwriting_input=allow_overwrite
+    ) as target_pdf:
+        dest_path = output_path or target_pdf_path
+        original_ids = target_pdf.trailer.get(Name.ID)
+        total_pairs = min(len(source_pdf.pages), len(target_pdf.pages))
+
+        if source_pages is None and target_pages is None:
+            source_pages = list(range(total_pairs))
+            target_pages = list(range(total_pairs))
+        elif target_pages is None and source_pages is not None:
+            target_pages = list(source_pages)
+        elif source_pages is None and target_pages is not None:
+            source_pages = list(target_pages)
+
+        if source_pages is None or target_pages is None:
+            raise ValueError("source_pages and target_pages could not be resolved")
+
+        if len(source_pages) != len(target_pages):
+            raise ValueError("source_pages and target_pages must have the same length")
+
+        for src_idx, tgt_idx in zip(source_pages, target_pages):
+            if src_idx < 0 or src_idx >= len(source_pdf.pages):
+                raise IndexError(f"source page {src_idx + 1} out of range")
+            if tgt_idx < 0 or tgt_idx >= len(target_pdf.pages):
+                raise IndexError(f"target page {tgt_idx + 1} out of range")
+
+            src_page = source_pdf.pages[src_idx]
+            tgt_page = target_pdf.pages[tgt_idx]
+
+            src_annots = src_page.get(Name.Annots)
+            if not src_annots:
+                continue
+
+            tgt_annots = tgt_page.get(Name.Annots)
+            if tgt_annots is None:
+                tgt_annots = pikepdf.Array()
+
+            for annot in src_annots:
+                if annot.get(Name.Subtype) != Name.Square:
+                    continue
+                copied = target_pdf.copy_foreign(annot)
+                tgt_annots.append(copied)
+
+            if tgt_annots:
+                tgt_page[Name.Annots] = tgt_annots
+
+        if original_ids is not None:
+            target_pdf.trailer[Name.ID] = original_ids
+
+        # 原地保存以尽量保持文件指纹与 inode
+        target_pdf.save(
+            dest_path,
+            static_id=True,
+        )
 
 
 def process(pdf_path: str, output_path: str, pages: Optional[Sequence[int]] = None) -> None:

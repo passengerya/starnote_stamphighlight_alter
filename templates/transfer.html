@@ -2,14 +2,14 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>PDF Stamp → Highlight</title>
+  <title>矩形注释转移 | PDF Helper</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <style>
-    /* DESIGN SYSTEM: "Fluid Pop v3 - Balanced Immersion" */
+    /* DESIGN SYSTEM: "Fluid Pop v3" (Copied from index.html) */
     :root {
       --c-blue: #4285F4;
       --c-red: #EA4335;
@@ -66,14 +66,9 @@
       filter: blur(100px); pointer-events: none;
     }
 
-    /* === 布局核心：统一宽度 === */
     .container {
-      /* 上下统一使用 92vw，不再有内部限制 */
-      width: 92vw;
-      max-width: 92vw;
-      margin: 0 auto; 
-      padding: 40px 0;
-      display: flex; flex-direction: column; gap: 24px;
+      width: 92vw; max-width: 92vw; margin: 0 auto; 
+      padding: 40px 0; display: flex; flex-direction: column; gap: 24px;
     }
 
     .glass-panel {
@@ -86,7 +81,7 @@
       padding: 32px;
       position: relative;
       transition: transform 0.3s var(--ease-smooth);
-      width: 100%; /* 确保面板撑满容器 */
+      width: 100%;
     }
 
     .header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -96,37 +91,39 @@
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
 
-    /* === 操作栏平衡优化 === */
+    .chip-link { 
+      color:var(--text-sub); text-decoration:none; font-weight:600; padding:10px 14px; 
+      border:1px solid var(--glass-border); border-radius:14px; background:var(--card-base); 
+      display:inline-flex; align-items:center; gap:8px; font-size: 14px;
+      transition: all 0.2s var(--ease-smooth);
+    }
+    .chip-link:hover { color:var(--text-main); background: var(--glass-highlight); transform: translateY(-1px); }
+
     .action-bar { 
       display: flex; gap: 16px; align-items: center; width: 100%; 
-      flex-wrap: wrap; /* 小屏幕允许换行 */
+      flex-wrap: wrap; 
     }
     
-    /* 让输入框自动填充中间的空隙，连接左右两侧 */
     .input-pill {
       background: var(--input-fill); border: 1px solid transparent;
       height: 52px; padding: 0 20px; border-radius: 99px;
       color: var(--text-main); font-family: inherit; font-size: 14px;
-      
-      /* 关键改动：Flex Grow */
-      flex: 1; 
-      min-width: 200px; /* 防止过窄 */
-      
+      flex: 1; min-width: 200px;
       transition: all 0.3s var(--ease-smooth);
     }
     .input-pill:focus { 
       background: var(--bg-deep); border-color: var(--c-blue); 
       box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.25); outline: none; transform: translateY(-1px);
     }
+    .input-pill:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* 按钮样式维持不变 */
     .btn {
       border: none; padding: 0 24px; height: 52px; border-radius: 99px;
       font-size: 15px; font-weight: 600; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-      position: relative; overflow: hidden; white-space: nowrap; /* 防止文字换行 */
+      position: relative; overflow: hidden; white-space: nowrap;
       transition: all 0.4s var(--ease-elastic);
-      flex-shrink: 0; /* 防止按钮被压缩 */
+      flex-shrink: 0;
     }
     .btn:hover:not(:disabled) { transform: translateY(-3px) scale(1.03); }
     .btn:active:not(:disabled) { transform: translateY(1px) scale(0.95); transition-duration: 0.1s; }
@@ -139,13 +136,14 @@
 
     .btn-secondary { background: var(--input-fill); color: var(--text-main); border: 1px solid transparent; }
     .btn-secondary:hover:not(:disabled) { background: var(--glass-border); border-color: rgba(255,255,255,0.1); box-shadow: 0 8px 24px -6px rgba(0,0,0,0.15); }
+    
     .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; box-shadow: none !important; filter: grayscale(0.8); }
 
-    .btn-overlay-ready {
+    .btn-transfer-ready {
       background: linear-gradient(135deg, var(--c-green), #2d9147) !important; color: white !important;
       box-shadow: 0 8px 20px -6px rgba(52, 168, 83, 0.4) !important;
     }
-    .btn-overlay-ready:hover:not(:disabled) { box-shadow: 0 16px 32px -8px rgba(52, 168, 83, 0.6) !important; }
+    .btn-transfer-ready:hover:not(:disabled) { box-shadow: 0 16px 32px -8px rgba(52, 168, 83, 0.6) !important; }
 
     .icon-btn {
       width: 44px; height: 44px; border-radius: 50%;
@@ -155,24 +153,6 @@
     }
     .icon-btn:hover { transform: rotate(20deg) scale(1.15); background: var(--text-main); color: var(--bg-deep); }
     .icon-btn:active { transform: scale(0.9); }
-
-    /* 步骤条自适应 */
-    .steps-container { display: flex; gap: 16px; margin-bottom: 32px; width: 100%; }
-    .step-card {
-      flex: 1; /* 平分宽度 */
-      background: var(--input-fill); border-radius: 20px; padding: 16px;
-      display: flex; align-items: center; gap: 14px; justify-content: center; /* 居中内容 */
-      border: 1px solid transparent; transition: 0.3s var(--ease-smooth);
-    }
-    .step-card:hover { background: var(--card-base); border-color: var(--glass-border); transform: translateY(-2px); }
-    .step-icon {
-      width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 800; color: white;
-    }
-    .s-1 { background: var(--c-blue); } .s-2 { background: var(--c-red); } .s-3 { background: var(--c-green); }
-    .step-text h3 { margin: 0 0 2px 0; font-size: 14px; font-weight: 600; white-space: nowrap; }
-    .step-text p { margin: 0; font-size: 12px; color: var(--text-sub); white-space: nowrap; }
 
     .status-bar {
       margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--glass-border);
@@ -185,9 +165,9 @@
       border: 1px solid var(--glass-border);
     }
 
-    /* === 预览区 (保持全宽) === */
+    /* Preview Layout */
     .preview-layout { display: flex; gap: 24px; width: 100%; }
-    .preview-section { flex: 1; min-width: 0; /* 防止Flex子项溢出 */ display: flex; flex-direction: column; }
+    .preview-section { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     
     .section-title {
       font-size: 15px; font-weight: 600; margin-bottom: 16px;
@@ -230,10 +210,12 @@
       background: var(--c-blue); color: white; display: flex; align-items: center; justify-content: center;
       transform: scale(0); transition: transform 0.4s var(--ease-elastic);
       z-index: 10; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      font-size: 11px; font-weight: 700;
     }
     .card.selected .badge { transform: scale(1); }
     .target-badge { background: var(--c-green); }
     .card.target-selected .badge { transform: scale(1); }
+    
     .card-label { text-align: center; font-size: 12px; margin-top: 10px; color: var(--text-sub); font-weight: 600; }
     .card.selected .card-label { color: var(--c-blue); }
     .card.target-selected .card-label { color: var(--c-green); }
@@ -241,6 +223,7 @@
     .hidden { display: none !important; }
     input[type="file"] { display: none; }
 
+    /* Context Menu & Full Preview (Same as Index) */
     .context-menu {
       position: fixed; z-index: 3000;
       background: var(--glass-surface); border: 1px solid var(--glass-border);
@@ -274,87 +257,71 @@
       display: block; width: 100%; height: auto;
       max-height: calc(85vh - 34px); border-radius: 10px; background: var(--bg-deep);
     }
-    
-    /* 移动端适配调整 */
-    @media (max-width: 768px) {
-      .preview-layout { flex-direction: column; }
-      .steps-container { flex-direction: column; }
+
+    @media(max-width:860px){ 
+      .preview-layout{flex-direction:column;} 
+      .input-pill{width:100%;} 
       .action-bar { gap: 12px; }
-      .input-pill { width: 100%; order: 3; } /* 移动端输入框换行 */
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 </head>
 <body>
-
   <div class="ambient-glow"></div>
-
   <div class="container">
-    
     <div class="glass-panel">
       <div class="header-row">
-        <h1>PDF Stamp → Highlight</h1>
+        <h1>矩形注释转移</h1>
         <div style="display:flex; gap:10px; align-items:center;">
-          <a href="/transfer" style="color:var(--text-sub); text-decoration:none; font-weight:600; border:1px solid var(--glass-border); padding:10px 14px; border-radius:14px; background:var(--card-base);">矩形注释转移</a>
+          <a class="chip-link" href="/">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回转换
+          </a>
           <button class="icon-btn" id="toggle-theme" title="切换主题">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
           </button>
         </div>
       </div>
 
-      <div class="steps-container">
-        <div class="step-card">
-          <div class="step-icon s-1">1</div>
-          <div class="step-text"><h3>导入需转换 PDF</h3><p>选择需转换的 PDF</p></div>
-        </div>
-        <div class="step-card">
-          <div class="step-icon s-2">2</div>
-          <div class="step-text"><h3>选择与甄别</h3><p>点击预览图或输入页码</p></div>
-        </div>
-        <div class="step-card">
-          <div class="step-icon s-3">3</div>
-          <div class="step-text"><h3>转换 / 覆盖</h3><p>生成高亮版本或合并</p></div>
-        </div>
-      </div>
-
       <div class="action-bar">
         <label class="btn btn-primary">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span id="source-filename">选择需转换 PDF</span>
-          <input id="file-input" type="file" accept="application/pdf">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span id="source-name">选择需转移注释 PDF</span>
+          <input id="src-file" type="file" accept="application/pdf">
         </label>
-        
-        <input id="custom-pages" class="input-pill" type="text" placeholder="页码范围 (如 1, 3-5)">
-        
-        <button id="process-selected" class="btn btn-secondary" disabled>处理选中页</button>
-        <button id="process-all" class="btn btn-secondary" disabled>处理全部</button>
+        <input id="src-pages" class="input-pill" type="text" placeholder="源页码 (如 1,3,5-7，可空)">
       </div>
 
-      <div style="height: 1px; background: var(--glass-border); margin: 28px 0;"></div>
+      <div style="height: 1px; background: var(--glass-border); margin: 24px 0;"></div>
 
       <div class="action-bar">
         <label class="btn btn-secondary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 12l8-8M12 12H4m8 0v8"/></svg>
-          <span id="target-filename">选择覆盖目标 PDF</span>
-          <input id="target-file-input" type="file" accept="application/pdf">
+          <span id="target-name">选择转移目标 PDF</span>
+          <input id="dst-file" type="file" accept="application/pdf">
         </label>
+        <input id="dst-pages" class="input-pill" type="text" placeholder="目标页码 (为空时沿用源页)">
         
-        <input id="target-pages" class="input-pill" type="text" placeholder="目标页码 (必填)">
-        <input id="source-pages" class="input-pill" type="text" placeholder="来源页码 (可选)" style="flex: 0.8"> <button id="process-overlay" class="btn btn-secondary" disabled>转换并覆盖</button>
+        <button id="transfer-btn" class="btn btn-secondary" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          转移矩形注释
+        </button>
       </div>
 
       <div class="status-bar">
         <div style="display:flex; gap:12px;">
-          <div id="file-tag-source" class="file-tag hidden">
+          <div id="tag-src" class="file-tag hidden">
             <span style="width:8px; height:8px; background:var(--c-blue); border-radius:50%"></span>
-            <span id="label-source-name">source.pdf</span>
+            <span id="tag-src-name">source.pdf</span>
             <span style="opacity:0.3">|</span>
-            <span id="label-source-count" style="color:var(--text-sub)">0p</span>
+            <span id="tag-src-count" style="color:var(--text-sub)">0p</span>
           </div>
-          <div id="file-tag-target" class="file-tag hidden">
+          <div id="tag-dst" class="file-tag hidden">
             <span style="width:8px; height:8px; background:var(--c-green); border-radius:50%"></span>
-            <span id="label-target-name">target.pdf</span>
+            <span id="tag-dst-name">target.pdf</span>
+            <span style="opacity:0.3">|</span>
+            <span id="tag-dst-count" style="color:var(--text-sub)">0p</span>
           </div>
         </div>
         <div id="status-text">等待文件...</div>
@@ -362,27 +329,21 @@
     </div>
 
     <div class="preview-layout">
-      <div class="glass-panel preview-section" id="panel-source" style="display:none">
+      <div class="glass-panel preview-section" id="panel-src" style="display:none">
         <div class="section-title">
-          <span>需转换 PDF 预览 (点击选择)</span>
-          <span style="color:var(--c-blue)" id="hint-source"></span>
+          <span>需转移注释 PDF 预览</span>
+          <span style="color:var(--c-blue)" id="src-hint"></span>
         </div>
-        <div class="grid-scroller">
-          <div id="grid-source" class="grid-container"></div>
-        </div>
+        <div class="grid-scroller"><div id="src-grid" class="grid-container"></div></div>
       </div>
-
-      <div class="glass-panel preview-section" id="panel-target" style="display:none">
+      <div class="glass-panel preview-section" id="panel-dst" style="display:none">
         <div class="section-title">
-          <span>覆盖目标预览 (点击选择)</span>
-          <span style="color:var(--c-green)" id="hint-target"></span>
+          <span>目标 PDF 预览</span>
+          <span style="color:var(--c-green)" id="dst-hint"></span>
         </div>
-        <div class="grid-scroller">
-          <div id="grid-target" class="grid-container"></div>
-        </div>
+        <div class="grid-scroller"><div id="dst-grid" class="grid-container"></div></div>
       </div>
     </div>
-
   </div>
 
   <div id="context-menu" class="context-menu hidden">
@@ -395,320 +356,305 @@
   <div id="full-preview" class="full-preview hidden">
     <div class="full-preview-header">
       <span id="full-preview-title">原图</span>
-      <span style="opacity:0.6">右键或按 Esc 关闭</span>
+      <span style="opacity:0.6">右键或 Esc 关闭</span>
     </div>
     <canvas id="full-preview-canvas"></canvas>
   </div>
 
   <script>
-    /* 逻辑保持不变 */
     const els = {
-      fileInput: document.getElementById('file-input'),
-      targetInput: document.getElementById('target-file-input'),
-      gridSource: document.getElementById('grid-source'),
-      gridTarget: document.getElementById('grid-target'),
-      panelSource: document.getElementById('panel-source'),
-      panelTarget: document.getElementById('panel-target'),
+      srcFile: document.getElementById('src-file'),
+      dstFile: document.getElementById('dst-file'),
+      srcName: document.getElementById('source-name'),
+      dstName: document.getElementById('target-name'),
+      srcPages: document.getElementById('src-pages'),
+      dstPages: document.getElementById('dst-pages'),
+      transfer: document.getElementById('transfer-btn'),
       status: document.getElementById('status-text'),
-      btnSelected: document.getElementById('process-selected'),
-      btnAll: document.getElementById('process-all'),
-      btnOverlay: document.getElementById('process-overlay'),
-      inputCustom: document.getElementById('custom-pages'),
-      inputTarget: document.getElementById('target-pages'),
-      inputSource: document.getElementById('source-pages'),
-      labelSource: document.getElementById('source-filename'),
-      labelTarget: document.getElementById('target-filename'),
-      tagSource: document.getElementById('file-tag-source'),
-      tagNameSource: document.getElementById('label-source-name'),
-      tagCountSource: document.getElementById('label-source-count'),
-      tagTarget: document.getElementById('file-tag-target'),
-      tagNameTarget: document.getElementById('label-target-name'),
-      hintSource: document.getElementById('hint-source'),
-      hintTarget: document.getElementById('hint-target'),
-      themeToggle: document.getElementById('toggle-theme'),
+      srcGrid: document.getElementById('src-grid'),
+      dstGrid: document.getElementById('dst-grid'),
+      srcHint: document.getElementById('src-hint'),
+      dstHint: document.getElementById('dst-hint'),
+      panelSrc: document.getElementById('panel-src'),
+      panelDst: document.getElementById('panel-dst'),
+      tagSrc: document.getElementById('tag-src'),
+      tagDst: document.getElementById('tag-dst'),
+      tagSrcName: document.getElementById('tag-src-name'),
+      tagDstName: document.getElementById('tag-dst-name'),
+      tagSrcCount: document.getElementById('tag-src-count'),
+      tagDstCount: document.getElementById('tag-dst-count'),
       contextMenu: document.getElementById('context-menu'),
-      contextView: document.querySelector('#context-menu [data-action=\"view-original\"]'),
+      contextView: document.querySelector('#context-menu [data-action="view-original"]'),
       fullPreview: document.getElementById('full-preview'),
       fullPreviewCanvas: document.getElementById('full-preview-canvas'),
-      fullPreviewTitle: document.getElementById('full-preview-title')
+      fullPreviewTitle: document.getElementById('full-preview-title'),
     };
 
-    let state = {
-      sourceFile: null, targetFile: null, sourceDoc: null, targetDoc: null,
-      selSource: new Set(), selTarget: new Set()
-    };
+    // 简化的全局状态：文件、PDF文档实例与选中页集合
+    const state = { srcFile:null, dstFile:null, srcDoc:null, dstDoc:null, selSrc:new Set(), selDst:new Set() };
     let contextState = null;
 
+    // 主题与主站保持一致
     (function initTheme() {
       const saved = localStorage.getItem('theme');
       const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
       document.documentElement.setAttribute('data-theme', saved || (prefersLight ? 'light' : 'dark'));
     })();
-
-    els.themeToggle.addEventListener('click', () => {
+    document.getElementById('toggle-theme').addEventListener('click', () => {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
       localStorage.setItem('theme', next);
     });
 
-    els.fileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      state.sourceFile = file;
-      els.labelSource.innerText = file.name;
-      els.tagNameSource.innerText = file.name;
-      els.tagSource.classList.remove('hidden');
-      updateStatus('正在解析需转换 PDF...', 'loading');
-      controls(false);
-      try {
-        const ab = await file.arrayBuffer();
-        state.sourceDoc = await pdfjsLib.getDocument({ data: ab }).promise;
-        els.tagCountSource.innerText = state.sourceDoc.numPages + '页';
-        state.selSource.clear();
-        els.inputCustom.value = '';
-        els.gridSource.innerHTML = '';
-        els.panelSource.style.display = 'flex';
-        els.hintSource.innerText = `${state.sourceDoc.numPages} 页`;
-        await renderGrid(state.sourceDoc, els.gridSource, false);
-        updateStatus('需转换 PDF 就绪', 'success');
-        controls(true);
-      } catch (err) { console.error(err); updateStatus('无法读取文件', 'error'); }
-    });
+    function updateStatus(msg, type='info'){
+      const colors = {info:'var(--text-sub)', error:'var(--c-red)', success:'var(--c-green)', loading: 'var(--text-main)'};
+      els.status.textContent = msg;
+      els.status.style.color = colors[type] || colors.info;
+    }
 
-    els.targetInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      state.targetFile = file || null;
-      if (!file) return;
-      els.labelTarget.innerText = file.name;
-      els.tagNameTarget.innerText = file.name;
-      els.tagTarget.classList.remove('hidden');
-      updateStatus('正在解析目标文件...', 'loading');
-      controls(false);
-      try {
-        const ab = await file.arrayBuffer();
-        state.targetDoc = await pdfjsLib.getDocument({ data: ab }).promise;
-        state.selTarget.clear();
-        els.inputTarget.value = '';
-        els.gridTarget.innerHTML = '';
-        els.panelTarget.style.display = 'flex';
-        els.hintTarget.innerText = `${state.targetDoc.numPages} 页`;
-        await renderGrid(state.targetDoc, els.gridTarget, true);
-        updateStatus('目标文件就绪', 'success');
-      } catch (err) { updateStatus('目标文件解析失败', 'error'); } finally { controls(true); }
-    });
+    function setBtnState(mismatch=false){
+      const readyFiles = state.srcFile && state.dstFile && !mismatch;
+      const count = currentCount();
+      
+      els.transfer.disabled = !readyFiles;
+      els.transfer.textContent = count > 0 ? `转移注释 (${count}页)` : '转移矩形注释';
+      
+      if (readyFiles) {
+        els.transfer.classList.add('btn-transfer-ready');
+        els.transfer.classList.remove('btn-secondary');
+      } else {
+        els.transfer.classList.remove('btn-transfer-ready');
+        els.transfer.classList.add('btn-secondary');
+      }
+    }
 
-    els.inputCustom.addEventListener('input', (e) => {
-      state.selSource = parseRange(e.target.value, state.sourceDoc?.numPages || 0);
-      syncVisuals(els.gridSource, state.selSource, false);
-      updateBtnState();
-    });
+    function parseRange(str, max){
+      const out = new Set();
+      if(!str) return out;
+      str.split(/[,，\s]+/).forEach(part=>{
+        if(!part) return;
+        if(part.includes('-')){
+          const [a,b] = part.split('-').map(Number);
+          if(a && b){
+            const lo = Math.min(a,b), hi = Math.max(a,b);
+            for(let i=lo;i<=hi;i++) if(i<=max) out.add(i);
+          }
+        }else{
+          const n = Number(part);
+          if(n && n<=max) out.add(n);
+        }
+      });
+      return out;
+    }
 
-    els.inputSource.addEventListener('input', (e) => {
-      state.selSource = parseRange(e.target.value, state.sourceDoc?.numPages || 0);
-      syncVisuals(els.gridSource, state.selSource, false);
-      updateBtnState();
-    });
+    function setToStr(set){ return Array.from(set).sort((a,b)=>a-b).join(', '); }
 
-    els.inputTarget.addEventListener('input', (e) => {
-      state.selTarget = parseRange(e.target.value, state.targetDoc?.numPages || 0);
-      syncVisuals(els.gridTarget, state.selTarget, true);
-      updateBtnState();
-    });
-
-    els.btnSelected.addEventListener('click', () => process(true));
-    els.btnAll.addEventListener('click', () => process(false));
-    els.btnOverlay.addEventListener('click', processOverlay);
-
-    async function renderGrid(doc, container, isTarget) {
+    // 按主页面逻辑生成缩略卡片并绑定点击/右键事件
+    async function renderGrid(doc, container, isTarget){
       container.innerHTML = '';
-      for (let i = 1; i <= doc.numPages; i++) {
+      for(let i=1;i<=doc.numPages;i++){
         const page = await doc.getPage(i);
-        const viewport = page.getViewport({ scale: 0.15 });
+        const viewport = page.getViewport({scale:0.15});
         const card = document.createElement('div');
         card.className = 'card';
         card.dataset.p = i;
+        
         const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
         canvas.width = viewport.width; canvas.height = viewport.height;
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        await page.render({canvasContext:canvas.getContext('2d'), viewport}).promise;
+        
         const badge = document.createElement('div');
         badge.className = isTarget ? 'badge target-badge' : 'badge';
-        badge.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        badge.textContent = i;
+        
         const label = document.createElement('div');
         label.className = 'card-label'; label.innerText = i;
-        card.appendChild(badge); card.appendChild(canvas); card.appendChild(label);
-        card.addEventListener('click', () => {
-          const set = isTarget ? state.selTarget : state.selSource;
-          if (set.has(i)) set.delete(i); else set.add(i);
-          if (isTarget) { els.inputTarget.value = setToStr(set); syncVisuals(container, set, true); }
-          else { els.inputCustom.value = setToStr(set); syncVisuals(container, set, false); }
-          updateBtnState();
+
+        card.appendChild(badge);
+        card.appendChild(canvas);
+        card.appendChild(label);
+
+        card.addEventListener('click', ()=>{
+          const set = isTarget ? state.selDst : state.selSrc;
+          if(set.has(i)) set.delete(i); else set.add(i);
+          syncSelection(container, set, isTarget);
+          if(isTarget) els.dstPages.value = setToStr(set);
+          else els.srcPages.value = setToStr(set);
         });
-        card.addEventListener('contextmenu', (evt) => {
+        card.addEventListener('contextmenu', (evt)=>{
           evt.preventDefault();
           const rect = card.getBoundingClientRect();
           showContextMenu(evt, { doc, page: i, label: isTarget ? 'target' : 'source', rect });
         });
         container.appendChild(card);
       }
+      syncSelection(container, isTarget?state.selDst:state.selSrc, isTarget);
     }
 
-    function syncVisuals(container, set, isTarget) {
-      for (let card of container.children) {
-        const p = parseInt(card.dataset.p);
+    function syncSelection(container, set, isTarget){
+      for(const card of container.children){
+        const p = Number(card.dataset.p);
         const cls = isTarget ? 'target-selected' : 'selected';
-        if (set.has(p)) card.classList.add(cls); else card.classList.remove(cls);
+        if(set.has(p)) card.classList.add(cls); else card.classList.remove(cls);
+      }
+      updateHints();
+      setBtnState(hasMismatch());
+    }
+
+    function controls(enabled){
+      els.srcPages.disabled = !enabled;
+      els.dstPages.disabled = !enabled;
+      els.transfer.disabled = !enabled || !(state.srcFile && state.dstFile);
+    }
+
+    els.srcFile.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      state.srcFile = file;
+      els.srcName.textContent = file.name;
+      els.tagSrcName.textContent = file.name;
+      updateStatus('正在解析需转移注释 PDF...', 'loading');
+      controls(false);
+      try {
+        const ab = await file.arrayBuffer();
+        state.srcDoc = await pdfjsLib.getDocument({data:ab}).promise;
+        state.selSrc.clear();
+        els.srcPages.value = '';
+        els.srcHint.textContent = `${state.srcDoc.numPages} 页`;
+        els.tagSrcCount.textContent = `${state.srcDoc.numPages}p`;
+        els.tagSrc.classList.remove('hidden');
+        els.panelSrc.style.display = 'flex';
+        await renderGrid(state.srcDoc, els.srcGrid, false);
+        updateHints();
+        updateStatus('源文件已载入', 'success');
+        controls(true);
+        setBtnState(hasMismatch());
+      } catch(err) { updateStatus('源文件解析失败', 'error'); }
+    });
+
+    els.dstFile.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      state.dstFile = file;
+      els.dstName.textContent = file.name;
+      els.tagDstName.textContent = file.name;
+      updateStatus('正在解析目标 PDF...', 'loading');
+      controls(false);
+      try {
+        const ab = await file.arrayBuffer();
+        state.dstDoc = await pdfjsLib.getDocument({data:ab}).promise;
+        state.selDst.clear();
+        els.dstPages.value = '';
+        els.dstHint.textContent = `${state.dstDoc.numPages} 页`;
+        els.tagDstCount.textContent = `${state.dstDoc.numPages}p`;
+        els.tagDst.classList.remove('hidden');
+        els.panelDst.style.display = 'flex';
+        await renderGrid(state.dstDoc, els.dstGrid, true);
+        updateHints();
+        updateStatus('目标文件已载入', 'success');
+        controls(true);
+        setBtnState(hasMismatch());
+      } catch(err) { updateStatus('目标文件解析失败', 'error'); }
+    });
+
+    els.srcPages.addEventListener('input', ()=>{
+      state.selSrc = parseRange(els.srcPages.value, state.srcDoc?.numPages||0);
+      syncSelection(els.srcGrid, state.selSrc, false);
+      setBtnState(hasMismatch());
+    });
+    els.dstPages.addEventListener('input', ()=>{
+      state.selDst = parseRange(els.dstPages.value, state.dstDoc?.numPages||0);
+      syncSelection(els.dstGrid, state.selDst, true);
+      setBtnState(hasMismatch());
+    });
+
+    // 输入优先，其次使用当前选择集合作为页码字符串
+    function normalizePages(inputEl, set){ const t=inputEl.value.trim(); if(t) return t; if(set.size) return setToStr(set); return ''; }
+
+    function currentCount(){
+      const rawSrc = normalizePages(els.srcPages, state.selSrc);
+      const srcSet = parseRange(rawSrc, state.srcDoc?.numPages || 0);
+      return srcSet.size || (state.srcDoc ? state.srcDoc.numPages : 0);
+    }
+
+    function hasMismatch(){
+      const rawSrc = normalizePages(els.srcPages, state.selSrc);
+      const rawDst = normalizePages(els.dstPages, state.selDst);
+      const srcSet = parseRange(rawSrc, state.srcDoc?.numPages || 0);
+      const dstSet = parseRange(rawDst, state.dstDoc?.numPages || 0);
+      return srcSet.size && dstSet.size && srcSet.size !== dstSet.size;
+    }
+
+    function updateHints(){
+      if(state.srcDoc){
+        const extra = state.selSrc.size ? ` · 选中 ${state.selSrc.size} 页` : '';
+        els.srcHint.textContent = `${state.srcDoc.numPages} 页${extra}`;
+      }
+      if(state.dstDoc){
+        const extra = state.selDst.size ? ` · 选中 ${state.selDst.size} 页` : '';
+        els.dstHint.textContent = `${state.dstDoc.numPages} 页${extra}`;
       }
     }
 
-    function controls(enabled) {
-      els.btnAll.disabled = !enabled; els.inputCustom.disabled = !enabled;
-      els.inputTarget.disabled = !enabled; els.inputSource.disabled = !enabled;
-      if (!enabled) {
-        els.btnSelected.disabled = true;
-        els.btnOverlay.disabled = true;
-      } else {
-        updateBtnState();
-      }
-    }
-
-    function updateBtnState() {
-      if (!state.sourceFile) { els.btnSelected.disabled = true; els.btnOverlay.disabled = true; return; }
-      const hasSel = state.selSource.size > 0;
-      els.btnSelected.disabled = !hasSel;
-      els.btnSelected.innerHTML = hasSel ? `处理选中 (${state.selSource.size})` : '处理选中页';
-      if(hasSel) { els.btnSelected.classList.add('btn-primary'); els.btnSelected.classList.remove('btn-secondary'); }
-      else { els.btnSelected.classList.remove('btn-primary'); els.btnSelected.classList.add('btn-secondary'); }
-
-      const readyOverlay = state.targetFile && (state.selTarget.size > 0 || els.inputTarget.value.trim());
-      els.btnOverlay.disabled = !readyOverlay;
-      if (readyOverlay) {
-        els.btnOverlay.classList.add('btn-overlay-ready');
-        els.btnOverlay.classList.remove('btn-secondary');
-      } else {
-        els.btnOverlay.classList.remove('btn-overlay-ready');
-        els.btnOverlay.classList.add('btn-secondary');
-      }
-    }
-
-    function updateStatus(msg, type) {
-      els.status.innerHTML = msg;
-      els.status.style.color = type === 'error' ? 'var(--c-red)' : type === 'success' ? 'var(--c-green)' : 'var(--text-sub)';
-    }
-
-    function parseRange(str, max) {
-      const s = new Set();
-      if (!str) return s;
-      const parts = str.split(/[,，\s]+/);
-      parts.forEach(p => {
-        if (p.includes('-')) {
-          const [a, b] = p.split('-').map(Number);
-          if (a && b) { const min = Math.min(a,b), high = Math.max(a,b); for(let i=min; i<=high; i++) if(i<=max) s.add(i); }
-        } else { const n = Number(p); if (n && n<=max) s.add(n); }
-      });
-      return s;
-    }
-
-    function setToStr(set) { return Array.from(set).sort((a,b)=>a-b).join(', '); }
-
-    function normalizePagesInput(inputEl, selectedSet) {
-      const typed = inputEl?.value?.trim();
-      if (typed) return typed;
-      if (selectedSet && selectedSet.size) return setToStr(selectedSet);
-      return '';
-    }
-
-    function filenameFromDisposition(res, fallback) {
+    function filenameFromDisposition(res, fallback){
       const header = res.headers.get('Content-Disposition') || '';
-      const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
-      const plainMatch = header.match(/filename="?([^\";]+)"?/i);
+      const utf8Match = header.match(/filename\\*=UTF-8''([^;]+)/i);
+      const plainMatch = header.match(/filename=\"?([^\";]+)\"?/i);
       const name = utf8Match?.[1] || plainMatch?.[1];
       return name ? decodeURIComponent(name) : fallback;
     }
 
-    async function responseToError(res) {
-      try {
-        const data = await res.clone().json();
-        if (data?.error) return data.error;
-      } catch (_) {}
-      try {
-        const text = await res.clone().text();
-        if (text) return text;
-      } catch (_) {}
+    async function responseToError(res){
+      try { const data = await res.clone().json(); if(data?.error) return data.error; } catch(_){}
+      try { const text = await res.clone().text(); if(text) return text; } catch(_){}
       return res.statusText || '请求失败';
     }
 
-    function downloadBlob(blob, filename) {
+    function downloadBlob(blob, filename){
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = filename || 'output.pdf';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      a.href = url; a.download = filename || 'rect-transfer.pdf'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
-    function derivedConvertName() {
-      const original = state.sourceFile?.name || 'processed.pdf';
-      const base = original.replace(/\.pdf$/i, '') || 'processed';
-      return `${base}_convert.pdf`;
-    }
-
-    async function process(selectedOnly) {
-      if(!state.sourceFile) return;
-      updateStatus('正在处理...', 'loading');
+    els.transfer.addEventListener('click', async ()=>{
+      if(!state.srcFile || !state.dstFile) return;
+      const rawSrc = normalizePages(els.srcPages, state.selSrc);
+      const rawDst = normalizePages(els.dstPages, state.selDst);
+      const srcSet = parseRange(rawSrc, state.srcDoc?.numPages || 0);
+      const dstSet = parseRange(rawDst, state.dstDoc?.numPages || 0);
+      
+      if(srcSet.size && dstSet.size && srcSet.size !== dstSet.size){
+        updateStatus('源页数与目标页数不匹配，请检查', 'error');
+        return;
+      }
+      
+      const srcPagesStr = srcSet.size ? setToStr(srcSet) : '';
+      const dstPagesStr = dstSet.size ? setToStr(dstSet) : '';
+      
+      updateStatus('正在转移矩形注释...', 'loading');
       controls(false);
       const fd = new FormData();
-      fd.append('file', state.sourceFile);
-      const pages = selectedOnly ? normalizePagesInput(els.inputCustom, state.selSource) : '';
-      if (pages) fd.append('pages', pages);
-      try {
-        const res = await fetch('/process', { method: 'POST', body: fd });
-        if (!res.ok) throw new Error(await responseToError(res));
+      fd.append('source_file', state.srcFile);
+      fd.append('target_file', state.dstFile);
+      if(srcPagesStr) fd.append('source_pages', srcPagesStr);
+      if(dstPagesStr) fd.append('target_pages', dstPagesStr);
+      
+      try{
+        const res = await fetch('/transfer_rects', {method:'POST', body:fd});
+        if(!res.ok) throw new Error(await responseToError(res));
         const blob = await res.blob();
-        const name = filenameFromDisposition(res, derivedConvertName());
+        const name = filenameFromDisposition(res, state.dstFile.name || 'rect-transfer.pdf');
         downloadBlob(blob, name);
-        updateStatus('处理完成，已开始下载', 'success');
-      } catch (err) {
+        updateStatus('转移完成，已开始下载', 'success');
+      }catch(err){
         console.error(err);
-        updateStatus(err?.message || '处理失败', 'error');
-      } finally {
+        updateStatus(err?.message || '转移失败', 'error');
+      }finally{
         controls(true);
+        setBtnState(hasMismatch());
       }
-    }
-
-    async function processOverlay() {
-      if(!state.sourceFile || !state.targetFile) return;
-      const targetPages = normalizePagesInput(els.inputTarget, state.selTarget);
-      if (!targetPages) { updateStatus('请先选择目标页码', 'error'); return; }
-      const sourcePages = normalizePagesInput(els.inputSource, state.selSource);
-      const pagesToProcess = normalizePagesInput(els.inputCustom, state.selSource);
-
-      updateStatus('正在合并...', 'loading');
-      controls(false);
-      const fd = new FormData();
-      fd.append('file', state.sourceFile);
-      fd.append('target_file', state.targetFile);
-      fd.append('target_pages', targetPages);
-      if (sourcePages) fd.append('source_pages', sourcePages);
-      if (pagesToProcess) fd.append('pages', pagesToProcess);
-
-      try {
-        const res = await fetch('/process_overlay', { method: 'POST', body: fd });
-        if (!res.ok) throw new Error(await responseToError(res));
-        const blob = await res.blob();
-        const name = filenameFromDisposition(res, state.targetFile?.name || 'merged.pdf');
-        downloadBlob(blob, name);
-        updateStatus('合并完成，已开始下载', 'success');
-      } catch (err) {
-        console.error(err);
-        updateStatus(err?.message || '合并失败', 'error');
-      } finally {
-        controls(true);
-      }
-    }
+    });
 
     function showContextMenu(evt, info) {
       contextState = info;
