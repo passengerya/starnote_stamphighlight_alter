@@ -672,8 +672,43 @@ def overlay_pages(
             # 检查目标页面索引是否有效
             if tgt_idx < 0 or tgt_idx >= len(target_pdf.pages):
                 raise IndexError(f"target page {tgt_idx + 1} out of range")
-            # 让pikepdf的pages接口完成跨文档复制（会自动 copy_foreign）
-            target_pdf.pages[tgt_idx] = source_pdf.pages[src_idx]
+            # 不替换页面对象，仅替换页面内容/资源/注释，保持目标PDF书签指向的页对象不变
+            src_page = source_pdf.pages[src_idx]
+            tgt_page = target_pdf.pages[tgt_idx]
+
+            # 先把源页对象整体复制到目标PDF，避免 direct object 无法 copy_foreign
+            src_page_copy = target_pdf.copy_foreign(src_page.obj)
+
+            keys_to_copy = (
+                Name.Contents,
+                Name.Resources,
+                Name.MediaBox,
+                Name.CropBox,
+                Name.BleedBox,
+                Name.TrimBox,
+                Name.ArtBox,
+                Name.Rotate,
+            )
+
+            for key in keys_to_copy:
+                if key in src_page_copy:
+                    tgt_page.obj[key] = src_page_copy[key]
+                elif key in tgt_page.obj:
+                    del tgt_page.obj[key]
+
+            # 替换注释，确保 /P 指向目标页，避免引用源PDF的页对象导致书签/跳转异常
+            if Name.Annots in src_page_copy:
+                src_annots = src_page_copy[Name.Annots]
+                new_annots = pikepdf.Array()
+                for annot in src_annots:
+                    annot[Name.P] = tgt_page.obj
+                    new_annots.append(annot)
+                if new_annots:
+                    tgt_page.obj[Name.Annots] = new_annots
+                elif Name.Annots in tgt_page.obj:
+                    del tgt_page.obj[Name.Annots]
+            elif Name.Annots in tgt_page.obj:
+                del tgt_page.obj[Name.Annots]
 
         if original_ids is not None:
             target_pdf.trailer[Name.ID] = original_ids
