@@ -672,41 +672,93 @@ def overlay_pages(
             # 检查目标页面索引是否有效
             if tgt_idx < 0 or tgt_idx >= len(target_pdf.pages):
                 raise IndexError(f"target page {tgt_idx + 1} out of range")
-            # 不替换页面对象，仅替换页面内容/资源/注释，保持目标PDF书签指向的页对象不变
+            # 不替换页面对象，仅替换内容/资源/注释，避免破坏书签对页对象的引用
             src_page = source_pdf.pages[src_idx]
             tgt_page = target_pdf.pages[tgt_idx]
 
             # 先把源页对象整体复制到目标PDF，避免 direct object 无法 copy_foreign
             src_page_copy = target_pdf.copy_foreign(src_page.obj)
 
-            keys_to_copy = (
-                Name.Contents,
-                Name.Resources,
-                Name.MediaBox,
-                Name.CropBox,
-                Name.BleedBox,
-                Name.TrimBox,
-                Name.ArtBox,
-                Name.Rotate,
-            )
+            # 计算源/目标页面尺寸（使用 MediaBox 作为页面坐标系基准）
+            # 采用“等比例缩放 + 居中”方式适配，避免页面被裁切
+            sx0, sy0, sx1, sy1 = [float(v) for v in src_page.mediabox]
+            tx0, ty0, tx1, ty1 = [float(v) for v in tgt_page.mediabox]
+            sw, sh = (sx1 - sx0), (sy1 - sy0)
+            tw, th = (tx1 - tx0), (ty1 - ty0)
 
-            for key in keys_to_copy:
-                if key in src_page_copy:
-                    tgt_page.obj[key] = src_page_copy[key]
-                elif key in tgt_page.obj:
-                    del tgt_page.obj[key]
+            # 避免异常尺寸导致除零或反向坐标
+            if sw <= 0 or sh <= 0 or tw <= 0 or th <= 0:
+                scale = 1.0
+                dx = tx0 - sx0
+                dy = ty0 - sy0
+            else:
+                # 等比例缩放至目标页内，并居中放置（可能出现留白）
+                scale = min(tw / sw, th / sh)
+                dx = tx0 + (tw - sw * scale) * 0.5 - sx0 * scale
+                dy = ty0 + (th - sh * scale) * 0.5 - sy0 * scale
 
-            # 替换注释，确保 /P 指向目标页，避免引用源PDF的页对象导致书签/跳转异常
+            # 将源页作为 Form XObject 放入目标页内容中
+            # 这样不改变目标页盒子信息（Media/Crop/Rotate），避免影响书签与已有注释位置
+            form = target_pdf.copy_foreign(src_page.as_form_xobject())
+
+            resources = tgt_page.obj.get(Name.Resources)
+            if resources is None:
+                resources = pikepdf.Dictionary()
+            xobjects = resources.get(Name.XObject)
+            if xobjects is None:
+                xobjects = pikepdf.Dictionary()
+
+            # 生成唯一的 XObject 名称并挂到目标页资源中
+            form_name = Name(f"/Fm{uuid.uuid4().hex[:8]}")
+            xobjects[form_name] = form
+            resources[Name.XObject] = xobjects
+            tgt_page.obj[Name.Resources] = resources
+
+            # 使用一次 Do 绘制源页内容，彻底覆盖原页面内容
+            content = f"q {scale:.6f} 0 0 {scale:.6f} {dx:.6f} {dy:.6f} cm {form_name} Do Q\n"
+            tgt_page.obj[Name.Contents] = target_pdf.make_stream(content.encode("ascii"))
+
+            # 注释策略：
+            # - 仅保留目标页原有的矩形注释（/Square）
+            # - 其它注释用源页注释替换，并按缩放/平移映射坐标
+            tgt_annots = tgt_page.obj.get(Name.Annots)
+            preserved_squares = pikepdf.Array()
+            if tgt_annots:
+                for annot in tgt_annots:
+                    if annot.get(Name.Subtype) == Name.Square:
+                        preserved_squares.append(annot)
+
+            new_annots = pikepdf.Array()
+            for annot in preserved_squares:
+                new_annots.append(annot)
+
             if Name.Annots in src_page_copy:
                 src_annots = src_page_copy[Name.Annots]
-                new_annots = pikepdf.Array()
                 for annot in src_annots:
+                    # 坐标按页面缩放/平移进行映射（Rect/QuadPoints）
+                    rect = annot.get(Name.Rect)
+                    if rect and len(rect) == 4:
+                        x0, y0, x1, y1 = [float(v) for v in rect]
+                        x0p, y0p = x0 * scale + dx, y0 * scale + dy
+                        x1p, y1p = x1 * scale + dx, y1 * scale + dy
+                        annot[Name.Rect] = pikepdf.Array(
+                            [min(x0p, x1p), min(y0p, y1p), max(x0p, x1p), max(y0p, y1p)]
+                        )
+
+                    quad = annot.get(Name.QuadPoints)
+                    if quad and len(quad) % 2 == 0:
+                        new_quad = []
+                        for i in range(0, len(quad), 2):
+                            x = float(quad[i]) * scale + dx
+                            y = float(quad[i + 1]) * scale + dy
+                            new_quad.extend([x, y])
+                        annot[Name.QuadPoints] = pikepdf.Array(new_quad)
+
                     annot[Name.P] = tgt_page.obj
                     new_annots.append(annot)
-                if new_annots:
-                    tgt_page.obj[Name.Annots] = new_annots
-                elif Name.Annots in tgt_page.obj:
-                    del tgt_page.obj[Name.Annots]
+
+            if new_annots:
+                tgt_page.obj[Name.Annots] = new_annots
             elif Name.Annots in tgt_page.obj:
                 del tgt_page.obj[Name.Annots]
 
